@@ -1,8 +1,30 @@
 import torch
 from torch import Tensor
-from typing import TypeAlias, Literal
+from typing import TypeAlias, Literal, Callable, Tuple
 
 Dimension: TypeAlias = Literal["x", "y", "z"]
+TensorFunc: TypeAlias = Callable[[Tensor], Tensor]
+TensorFuncAux: TypeAlias = Callable[[Tensor], Tuple[Tensor, ...]]
+
+
+def _grad_outputs(outputs: Tensor, inputs: Tensor) -> Tuple[Tensor, Tensor]:
+    assert inputs.requires_grad and outputs.dim() == 1
+    grad = torch.autograd.grad(
+        outputs,
+        inputs,
+        torch.ones_like(outputs),
+        create_graph=True,
+        retain_graph=True,
+    )[0]
+    return outputs, grad
+
+
+def grad(func: TensorFunc) -> TensorFunc:
+    return lambda x: _grad_outputs(func(x), x)[1]
+
+
+def grad_and_value(func: TensorFunc) -> TensorFuncAux:
+    return lambda x: tuple(reversed(_grad_outputs(func(x), x)))
 
 
 def partial(
@@ -25,50 +47,33 @@ def partial(
     )[0][:, input_idx]
 
 
-def gradient(outputs: Tensor, inputs: Tensor) -> Tensor:
-    assert inputs.requires_grad
-    assert outputs.dim() == 1
-
-    grad_outputs = torch.autograd.grad(
-        outputs=outputs,
-        inputs=inputs,
-        grad_outputs=torch.ones_like(outputs),
-        create_graph=True,
-    )[0]
-
-    return grad_outputs
-
-
-def divergence(outputs: Tensor, inputs: Tensor) -> Tensor:
+def _div(outputs: Tensor, inputs: Tensor) -> Tensor:
     assert inputs.requires_grad
     assert inputs.dim() == outputs.dim()
+    assert outputs.shape[1] == 3 and inputs.shape[1] == 3
 
-    # ∂Fx/∂x
     dFx_dx = partial(outputs, inputs, "x", "x")
-
-    # ∂Fx/∂x
     dFy_dy = partial(outputs, inputs, "y", "y")
-
-    # ∂Fx/∂x
     dFz_dz = partial(outputs, inputs, "z", "z")
 
     return dFx_dx + dFy_dy + dFz_dz
 
 
-def curl(outputs: Tensor, inputs: Tensor) -> Tensor:
+def div(func: TensorFunc) -> TensorFunc:
+    return lambda x: _div(func(x), x)
+
+
+def _curl(outputs: Tensor, inputs: Tensor) -> Tensor:
     assert inputs.requires_grad
     assert inputs.dim() == outputs.dim() == 2
     assert outputs.shape[1] == 3 and inputs.shape[1] == 3
 
-    # ∂Fy/∂z - ∂Fz/∂y
     dFy_dz = partial(outputs, inputs, "y", "z")
     dFz_dy = partial(outputs, inputs, "z", "y")
 
-    # ∂Fz/∂x - ∂Fx/∂z
     dFz_dx = partial(outputs, inputs, "z", "x")
     dFx_dz = partial(outputs, inputs, "x", "z")
 
-    # ∂Fx/∂y - ∂Fy/∂x
     dFx_dy = partial(outputs, inputs, "x", "y")
     dFy_dx = partial(outputs, inputs, "y", "x")
 
@@ -83,3 +88,7 @@ def curl(outputs: Tensor, inputs: Tensor) -> Tensor:
     curl[:, 2] = dFx_dy - dFy_dx
 
     return curl
+
+
+def curl(func: TensorFunc) -> TensorFunc:
+    return lambda x: _curl(func(x), x)
