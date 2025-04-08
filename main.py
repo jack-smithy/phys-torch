@@ -1,20 +1,14 @@
-from torch import Tensor
+import phys_torch
 import torch
-from phys_torch import grad, _div, curl, grad_and_value
-from typing import reveal_type
+
+x = torch.randn((4, 3), requires_grad=True)  # 4 points in 3D space
 
 
-def vfunc(inputs: Tensor) -> Tensor:
-    x, y, z = inputs.T
-    return torch.stack((x.sin() * y * z, y.cos() * z * x, z.tan() * x * y)).T
+@phys_torch.check
+def F(x):
+    return x
 
 
-def sfunc(inputs: Tensor) -> Tensor:
-    return inputs.sin().sum(-1)
+gradF = phys_torch.grad(F)(x)
 
-
-x = torch.randn((10, 3), requires_grad=True)
-F = sfunc(x)
-
-gradF = grad_and_value(sfunc)(x)
-print(gradF[0], gradF[1])
+print(gradF)

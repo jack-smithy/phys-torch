@@ -484,19 +484,27 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "matplotlib" },
-    { name = "mypy" },
     { name = "numpy" },
-    { name = "pytest" },
     { name = "torch" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.1" },
-    { name = "mypy", specifier = ">=1.15.0" },
     { name = "numpy", specifier = ">=2.2.4" },
-    { name = "pytest", specifier = ">=8.3.5" },
     { name = "torch", specifier = ">=2.6.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.15.0" },
+    { name = "pytest", specifier = ">=8.3.5" },
 ]
 
 [[package]]

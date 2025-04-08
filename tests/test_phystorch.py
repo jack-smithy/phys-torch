@@ -1,7 +1,8 @@
 import torch
 from torch import Tensor
 from itertools import product
-from phys_torch import grad, grad_and_value, div, curl
+from phys_torch import grad, grad_and_value, div, curl, check
+import pytest
 
 ###### helpers ######
 ### generate points
@@ -128,3 +129,28 @@ def test_curl_3d():
         curl_F_analytical = curl_func(x)
 
         assert torch.allclose(curl_F, curl_F_analytical)
+
+
+def test_scalar_func_args():
+    x_good = grid(3)
+    x_bad = torch.ones((1, 4))
+
+    @check
+    def func_pass(x: Tensor) -> Tensor:
+        return x.sum(-1)
+
+    @check
+    def func_fail_output(x: Tensor) -> Tensor:
+        return x
+
+    @check
+    def func_fail_input(x: Tensor):
+        return x
+
+    func_pass(x_good)
+
+    with pytest.raises(ValueError):
+        func_fail_output(x_good)
+
+    with pytest.raises(ValueError):
+        func_fail_input(x_bad)
