@@ -15,45 +15,69 @@ def grid(d):
 ### scalar funcs
 
 
-def scalar_func_2d_1(input: Tensor) -> Tensor:
-    return input[..., 0] ** 2 + input[..., 1] ** 2
+def scalar_func_2d_1(inputs: Tensor) -> Tensor:
+    return inputs[..., 0] ** 2 + inputs[..., 1] ** 2
 
 
-def scalar_func_2d_2(input: Tensor) -> Tensor:
-    return input[..., 0] + input[..., 1]
+def scalar_func_2d_2(inputs: Tensor) -> Tensor:
+    return inputs[..., 0] + inputs[..., 1]
 
 
 ### analytical gradients
 
 
-def grad_scalar_func_2d_1(input: Tensor) -> Tensor:
-    return torch.stack((2 * input[..., 0], 2 * input[..., 1])).T
+def grad_scalar_func_2d_1(inputs: Tensor) -> Tensor:
+    return torch.stack((2 * inputs[..., 0], 2 * inputs[..., 1])).T
 
 
-def grad_scalar_func_2d_2(input: Tensor) -> Tensor:
-    return torch.ones((input.shape[0], 2))
+def grad_scalar_func_2d_2(inputs: Tensor) -> Tensor:
+    return torch.ones((inputs.shape[0], 2))
 
 
 ### vector funcs
 
 
-def vector_func_3d3d(input: Tensor) -> Tensor:
-    return torch.stack((input[..., 0] ** 2, input[..., 1] ** 2, input[..., 2] ** 2)).T
+def vector_func_3d3d_1(inputs: Tensor) -> Tensor:
+    x, y, z = inputs.T
+    return torch.stack((x**2, y**2, z**2)).T
 
+
+def vector_func_3d3d_2(inputs: Tensor) -> Tensor:
+    x, y, z = inputs.T
+    return torch.stack((x.exp() * z.sin(), y**2 * z, 2 * x)).T
+
+
+vector_funcs = [vector_func_3d3d_1, vector_func_3d3d_2]
 
 ### analytical divergences
 
 
-def div_vector_func_3d3d(input: Tensor) -> Tensor:
-    return 2 * input.sum(dim=1)
+def div_vector_func_3d3d_1(inputs: Tensor) -> Tensor:
+    return 2 * inputs.sum(dim=1)
 
+
+def div_vector_func_3d3d_2(inputs: Tensor) -> Tensor:
+    x, y, z = inputs.T
+    return x.exp() * z.sin() + 2 * y * z
+
+
+div_vector_funcs = [div_vector_func_3d3d_1, div_vector_func_3d3d_2]
+
+### analytical curls
+
+
+def curl_vector_func_3d3d_1(inputs: Tensor) -> Tensor:
+    return torch.zeros_like(inputs)
+
+
+def curl_vector_func_3d3d_2(inputs: Tensor) -> Tensor:
+    x, y, z = inputs.T
+    return torch.stack((y**2, 2 - z.cos() * x.exp(), torch.zeros_like(z))).T
+
+
+curl_vector_funcs = [curl_vector_func_3d3d_1, curl_vector_func_3d3d_2]
 
 ###### tests ######
-
-
-def test_installed():
-    t = phys_torch.testies((2, 2))
-    assert isinstance(t, Tensor)
 
 
 def test_gradient_2d():
@@ -82,20 +106,22 @@ def test_gradient_distributive_2d():
 
 
 def test_divergence_3d():
-    x = grid(3)
-    F = vector_func_3d3d(x)
+    for func, div_func in zip(vector_funcs, div_vector_funcs):
+        x = grid(3)
+        F = func(x)
 
-    div_F = phys_torch.divergence(F, x)
-    div_F_analytical = div_vector_func_3d3d(x)
+        div_F = phys_torch.divergence(F, x)
+        div_F_analytical = div_func(x)
 
-    assert torch.allclose(div_F, div_F_analytical)
+        assert torch.allclose(div_F, div_F_analytical)
 
 
 def test_curl_3d():
-    x = grid(3)
-    F = vector_func_3d3d(x)
+    for func, curl_func in zip(vector_funcs, curl_vector_funcs):
+        x = grid(3)
+        F = func(x)
 
-    curl_F = phys_torch.curl(F, x)
-    curl_F_analytical = torch.zeros_like(x)
+        curl_F = phys_torch.curl(F, x)
+        curl_F_analytical = curl_func(x)
 
-    assert torch.allclose(curl_F, curl_F_analytical)
+        assert torch.allclose(curl_F, curl_F_analytical)

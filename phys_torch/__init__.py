@@ -1,13 +1,8 @@
 import torch
 from torch import Tensor
-from typing import Callable, TypeAlias, Literal
+from typing import TypeAlias, Literal
 
-TensorFunc: TypeAlias = Callable[[Tensor], Tensor]
 Dimension: TypeAlias = Literal["x", "y", "z"]
-
-
-def testies(shape):
-    return torch.rand(shape)
 
 
 def partial(
