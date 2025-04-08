@@ -13,5 +13,5 @@ dependencies = [
 
 
 [tool.pytest.ini_options]
-pythonpath = ["phys_torch"]
+pythonpath = ["."]
 addopts = "-v"
