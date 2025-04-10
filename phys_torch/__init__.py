@@ -1,7 +1,6 @@
 import torch
 from torch import Tensor
-from typing import TypeAlias, Literal, Callable, Tuple
-import functools
+from typing import TypeAlias, Literal, Callable, Tuple, overload
 
 Dimension: TypeAlias = Literal["x", "y", "z"]
 
@@ -21,7 +20,15 @@ def _grad_outputs(outputs: Tensor, inputs: Tensor) -> Tuple[Tensor, Tensor]:
     Returns:
         Tuple[Tensor, Tensor]: Gradents at the output points, and the output value
     """
-    assert inputs.requires_grad
+    assert inputs.requires_grad and outputs.requires_grad
+
+    if inputs.dim() != 2:
+        raise ValueError(
+            "Input function must accept tensor with shape (batch_size, dim)"
+        )
+
+    if outputs.dim() != 1:
+        raise ValueError("Output tensor must be shape (batch_size,)")
 
     grad = torch.autograd.grad(
         outputs,
@@ -34,94 +41,46 @@ def _grad_outputs(outputs: Tensor, inputs: Tensor) -> Tuple[Tensor, Tensor]:
     return grad, outputs
 
 
-def grad(func: _TensorFunc) -> _TensorFunc:
-    """
-    grad operator computing gradients of func with respect to the input for functions `R^3->R`.
-    This operator can be nested to compute higher-order gradients.
+@overload
+def grad(func: _TensorFunc, return_value: Literal[False] = ...) -> _TensorFunc: ...
 
-    The input function should accept a batched tensor of shape `(n, 3)` and return
-    a tensor of shape `(n,)`. The gradient computation is performed for each
+
+@overload
+def grad(func: _TensorFunc, return_value: Literal[True]) -> _TensorFuncAux: ...
+
+
+def grad(func: _TensorFunc, return_value: bool = False) -> _TensorFunc | _TensorFuncAux:
+    """
+    grad operator computing gradients of func with respect to the input for functions `R^dim->R`.
+    This operator can be composed to compute higher-order gradients.
+
+    The input function should accept a batched tensor of shape `(batch_size, dim)` and return
+    a tensor of shape `(batch_size, )`. The gradient computation is performed for each
     batch element.
 
-
     ```python
-    import phys_torch
-    import torch
-
     x = torch.randn((4, 3), requires_grad=True)  # 4 points in 3D space
 
-    def Ffunc(x):
+    def func(x):
         return x[:, 0] ** 2 + x[:, 1] * x[:, 2]
 
-    gradF = phys_torch.grad(Ffunc)(x)
+    gradF = grad(func)(x)
+    gradF, F = grad(func, return_value=True)(x)
     ```
 
     Args:
         func (_TensorFunc): A function that takes a tensor of shape `(n, 3)`
                             and returns a tensor of shape `(n,)`.
+        return_value (bool): Whether to return the values of the function at the points.
 
     Returns:
         _TensorFunc: A function that computes the gradient of the input function
                      with respect to its input.
     """
+    if return_value:
+        return lambda x: _grad_outputs(func(x), x)
 
-    def wrapper(x: Tensor):
-        if x.shape[1] != 3 and x.dim() != 2:
-            raise ValueError("Input function must accept tensor with shape (n ,3)")
-
-        y = func(x)
-
-        if y.dim() != 1:
-            raise ValueError("Output tensor must be shape (n,)")
-
-        return _grad_outputs(y, x)[0]
-
-    return wrapper
-
-
-def grad_and_value(func: _TensorFunc) -> _TensorFuncAux:
-    """
-    grad operator computing gradients and values of func with respect to the input for functions `R^3->R`.
-    This operator can be nested to compute higher-order gradients.
-
-    The input function should accept a batched tensor of shape `(n, 3)` and return
-    a tensor of shape `(n,)`. The gradient computation is performed for each
-    batch element.
-
-
-    ```python
-    import phys_torch
-    import torch
-
-    x = torch.randn((4, 3), requires_grad=True)  # 4 points in 3D space
-
-    def Ffunc(x):
-        return x[:, 0] ** 2 + x[:, 1] * x[:, 2]
-
-    F, gradF = phys_torch.grad_and_value(Ffunc)(x)
-    ```
-
-    Args:
-        func (_TensorFunc): A function that takes a tensor of shape `(n, 3)`
-            and returns a tensor of shape `(n,)`.
-
-    Returns:
-        _TensorFuncAux: A function that computes the gradient of the input function
-            with respect to its input, and the values of the function at those points.
-    """
-
-    def wrapper(x: Tensor):
-        if x.shape[1] != 3 and x.dim() != 2:
-            raise ValueError("Input function must accept tensor with shape (n ,3)")
-
-        y = func(x)
-
-        if y.dim() != 1:
-            raise ValueError("Output tensor must be shape (n,)")
-
-        return _grad_outputs(y, x)
-
-    return wrapper
+    return lambda x: _grad_outputs(func(x), x)[0]
 
 
 def _partial(
@@ -142,6 +101,7 @@ def _partial(
     Returns:
         Tensor: _description_
     """
+    assert inputs.requires_grad
 
     dim_map = {"x": 0, "y": 1, "z": 2}
 
@@ -165,7 +125,18 @@ def partial(
     """
     Operator which calculates the (input_dim, output_dim) partial derivative of outputs with respect to inputs.
 
-    For a function `R^3->R^3`, it calculates `∂F_(output_dim)/∂_(input_dim)`
+    For a function `R^n->R^m`, it calculates `∂F_(output_dim)/∂_(input_dim)`, where `input_dim ∈ {0,...,n-1}`, and `output_dim ∈ {0,...,m-1}`.
+    If the function acts `R^3->R^3`, the letters "x", "y", and "z" can be used to denote the dimensions for the derivative.
+
+    ```python
+    inputs = torch.randn((4, 3))
+
+    def func(x):
+        return torch.stack((x[:, 0] ** 2 + x[:, 1], x[:, 2], x[:, 0].sin())).T
+
+    df_y/dx = partial(func, input_dim="x", output_dim="y")(inputs) # calculates ∂F_y/∂x
+    df_z/dy = partial(func, input_dim=1, output_dim=2)(inputs) # calculates ∂F_z/∂y
+    ```
 
     Args:
         outputs (Tensor): Tensor result from a computation.
@@ -177,30 +148,70 @@ def partial(
         Tensor: _description_
     """
 
-    def wrapper(x):
-        y = func(x)
-        return _partial(y, x, input_dim=input_dim, output_dim=output_dim)
+    return lambda x: _partial(
+        outputs=func(x),
+        inputs=x,
+        input_dim=input_dim,
+        output_dim=output_dim,
+    )
 
-    return wrapper
 
+def _div_outputs(outputs: Tensor, inputs: Tensor) -> Tuple[Tensor, Tensor]:
+    """
+    Calculates the divergence of outputs with respect to inputs.
 
-def _div(outputs: Tensor, inputs: Tensor) -> Tensor:
-    assert inputs.requires_grad, "The input tensor must have `requires_grad=True`"
+    Args:
+        outputs (Tensor): _description_
+        inputs (Tensor): _description_
+
+    Returns:
+        Tuple[Tensor, Tensor]: _description_
+    """
+    assert inputs.requires_grad and outputs.requires_grad
     assert inputs.dim() == outputs.dim()
-    assert outputs.shape[1] == 3 and inputs.shape[1] == 3
+    assert outputs.shape[1] == inputs.shape[1]
 
-    dFx_dx = _partial(outputs, inputs, "x", "x")
-    dFy_dy = _partial(outputs, inputs, "y", "y")
-    dFz_dz = _partial(outputs, inputs, "z", "z")
+    divs = torch.empty((inputs.shape[0]))
+    for i in range(inputs.shape[1]):
+        divs += _partial(outputs, inputs, i, i)
 
-    return dFx_dx + dFy_dy + dFz_dz
-
-
-def div(func: _TensorFunc) -> _TensorFunc:
-    return lambda x: _div(func(x), x)
+    return divs, outputs
 
 
-def _curl(outputs: Tensor, inputs: Tensor) -> Tensor:
+@overload
+def div(func: _TensorFunc, return_value: Literal[False] = ...) -> _TensorFunc: ...
+
+
+@overload
+def div(func: _TensorFunc, return_value: Literal[True]) -> _TensorFuncAux: ...
+
+
+def div(func: _TensorFunc, return_value: bool = False) -> _TensorFunc | _TensorFuncAux:
+    """_summary_
+
+    Args:
+        func (_TensorFunc): _description_
+        return_value (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        _TensorFunc | _TensorFuncAux: _description_
+    """
+    if return_value:
+        return lambda x: _div_outputs(outputs=func(x), inputs=x)
+
+    return lambda x: _div_outputs(outputs=func(x), inputs=x)[0]
+
+
+def _curl_outputs(outputs: Tensor, inputs: Tensor) -> Tuple[Tensor, Tensor]:
+    """_summary_
+
+    Args:
+        outputs (Tensor): _description_
+        inputs (Tensor): _description_
+
+    Returns:
+        Tuple[Tensor, Tensor]: _description_
+    """
     assert inputs.requires_grad
     assert inputs.dim() == outputs.dim() == 2
     assert outputs.shape[1] == 3 and inputs.shape[1] == 3
@@ -224,51 +235,28 @@ def _curl(outputs: Tensor, inputs: Tensor) -> Tensor:
     curl[:, 1] = dFz_dx - dFx_dz
     curl[:, 2] = dFx_dy - dFy_dx
 
-    return curl
+    return curl, outputs
 
 
-def curl(func: _TensorFunc) -> _TensorFunc:
-    return lambda x: _curl(func(x), x)
+@overload
+def curl(func: _TensorFunc, return_value: Literal[False] = ...) -> _TensorFunc: ...
 
 
-def check(func):
-    """
-    Checks a function accepts and returns valid shapes for scalar functions
+@overload
+def curl(func: _TensorFunc, return_value: Literal[True]) -> _TensorFuncAux: ...
+
+
+def curl(func: _TensorFunc, return_value: bool = False) -> _TensorFunc | _TensorFuncAux:
+    """_summary_
 
     Args:
-        func (_type_): _description_
-
-    Raises:
-        TypeError: _description_
-        ValueError: _description_
-        TypeError: _description_
-        ValueError: _description_
+        func (_TensorFunc): _description_
+        return_value (bool, optional): _description_. Defaults to False.
 
     Returns:
-        _type_: _description_
+        _TensorFunc | _TensorFuncAux: _description_
     """
+    if return_value:
+        return lambda x: _curl_outputs(outputs=func(x), inputs=x)
 
-    @functools.wraps(func)
-    def wrapper(x, *args, **kwargs):
-        # Check input shape
-        if not isinstance(x, Tensor):
-            raise TypeError(f"Expected Tensor as input, got {type(x)}")
-
-        if len(x.shape) != 2 or x.shape[1] != 3:
-            raise ValueError(f"Input tensor must have shape (n, 3), got {x.shape}")
-
-        # Call the original function
-        result = func(x, *args, **kwargs)
-
-        # Check output shape
-        if not isinstance(result, Tensor):
-            raise TypeError(f"Expected Tensor as output, got {type(result)}")
-
-        if len(result.shape) != 1 or result.shape[0] != x.shape[0]:
-            raise ValueError(
-                f"Output tensor must have shape ({x.shape[0]},), got {result.shape}"
-            )
-
-        return result
-
-    return wrapper
+    return lambda x: _curl_outputs(outputs=func(x), inputs=x)[0]

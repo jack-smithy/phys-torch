@@ -1,8 +1,7 @@
 import torch
 from torch import Tensor
 from itertools import product
-from phys_torch import grad, grad_and_value, div, curl, check
-import pytest
+from phys_torch import grad, div, curl
 
 ###### helpers ######
 ### generate points
@@ -83,7 +82,7 @@ curl_vector_funcs = [curl_vector_func_3d3d_1, curl_vector_func_3d3d_2]
 
 def test_gradient_2d():
     x = grid(2)
-    grad_y = grad(scalar_func_2d_2)(x)
+    grad_y = grad(scalar_func_2d_2, return_value=False)(x)
     grad_y_analytical = grad_scalar_func_2d_2(x)
 
     assert torch.allclose(grad_y, grad_y_analytical)
@@ -103,12 +102,29 @@ def test_gradient_distributive_2d():
 
 def test_grad_and_value_2d():
     x = grid(2)
-    gradA, A = grad_and_value(scalar_func_2d_2)(x)
+    gradA, A = grad(scalar_func_2d_2, return_value=True)(x)
 
     gradA_analytical, A_analytical = grad_scalar_func_2d_2(x), scalar_func_2d_2(x)
 
     assert torch.allclose(gradA, gradA_analytical)
     assert torch.allclose(A, A_analytical)
+
+
+def test_grad_and_value_distributive_2d():
+    x = grid(2)
+
+    gradA, A = grad(scalar_func_2d_1, return_value=True)(x)
+    gradB, B = grad(scalar_func_2d_2, return_value=True)(x)
+    gradA_plus_gradB = gradA + gradB
+    AplusB1 = A + B
+
+    grad_AplusB, AplusB2 = grad(
+        lambda x: scalar_func_2d_1(x) + scalar_func_2d_2(x),
+        return_value=True,
+    )(x)
+
+    assert torch.allclose(AplusB1, AplusB2)
+    assert torch.allclose(grad_AplusB, gradA_plus_gradB)
 
 
 def test_divergence_3d():
@@ -121,6 +137,17 @@ def test_divergence_3d():
         assert torch.allclose(divF, div_F_analytical)
 
 
+def test_divergence_and_value_3d():
+    for func, div_func in zip(vector_funcs, div_vector_funcs):
+        x = grid(3)
+
+        divF, F = div(func, return_value=True)(x)
+        divF_analytical, F_analytical = div_func(x), func(x)
+
+        assert torch.allclose(divF, divF_analytical)
+        assert torch.allclose(F, F_analytical)
+
+
 def test_curl_3d():
     for func, curl_func in zip(vector_funcs, curl_vector_funcs):
         x = grid(3)
@@ -131,26 +158,21 @@ def test_curl_3d():
         assert torch.allclose(curl_F, curl_F_analytical)
 
 
-def test_scalar_func_args():
-    x_good = grid(3)
-    x_bad = torch.ones((1, 4))
+def test_curl_and_value_3d():
+    for func, curl_func in zip(vector_funcs, curl_vector_funcs):
+        x = grid(3)
 
-    @check
-    def func_pass(x: Tensor) -> Tensor:
-        return x.sum(-1)
+        curlF, F = curl(func, return_value=True)(x)
+        curlF_analytical, F_analytical = curl_func(x), func(x)
 
-    @check
-    def func_fail_output(x: Tensor) -> Tensor:
-        return x
+        assert torch.allclose(curlF, curlF_analytical)
+        assert torch.allclose(F, F_analytical)
 
-    @check
-    def func_fail_input(x: Tensor):
-        return x
 
-    func_pass(x_good)
+def test_div_curl():
+    for func in vector_funcs:
+        x = grid(3)
+        div_curlF = div(curl(func))(x)
+        expected_output = torch.zeros(x.shape[0])
 
-    with pytest.raises(ValueError):
-        func_fail_output(x_good)
-
-    with pytest.raises(ValueError):
-        func_fail_input(x_bad)
+        assert torch.allclose(div_curlF, expected_output)

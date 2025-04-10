@@ -1,7 +1,7 @@
 [project]
 name = "phys-torch"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.1.1"
+description = "Vector Calculus Utilities for PINNs"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -12,9 +12,16 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "build>=1.2.2.post1",
+    "ipykernel>=6.29.5",
     "mypy>=1.15.0",
     "pytest>=8.3.5",
+    "twine>=6.1.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
