@@ -31,3 +31,7 @@ jobs:
     - name: Run tests
       run: |
         python -m pytest
+
+    - name: Check mypy
+      run: |
+        python -m mypy .
