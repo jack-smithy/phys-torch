@@ -30,4 +30,4 @@ jobs:
 
     - name: Run tests
       run: |
-        mypy .
+        python -m pytest
